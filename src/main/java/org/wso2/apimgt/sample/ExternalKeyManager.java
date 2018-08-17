@@ -24,6 +24,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 import org.wso2.carbon.apimgt.api.APIManagementException;
 import org.wso2.carbon.apimgt.api.model.AccessTokenInfo;
+import org.wso2.carbon.apimgt.api.model.AccessTokenRequest;
 import org.wso2.carbon.apimgt.api.model.ApplicationConstants;
 import org.wso2.carbon.apimgt.api.model.OAuthAppRequest;
 import org.wso2.carbon.apimgt.api.model.OAuthApplicationInfo;
@@ -37,14 +38,20 @@ import java.text.ParseException;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.UUID;
 
 public class ExternalKeyManager extends AMDefaultKeyManagerImpl {
-
     private static final Log log = LogFactory.getLog(ExternalKeyManager.class);
 
+    // Mock consumer key
+    private static final String CONSUMER_KEY = "4PFY8MmHtNtEqXuKcfXd6adEZqca";
+
+    // Mock consumer key
+    private static final String CONSUMER_SECRET = "pG6syBaBxgatCtapT9fAYC8EXFAa";
+
+    private static final String ACCESS_TOKEN = "eyJ4NXQiOiJOVEF4Wm1NeE5ETXlaRGczTVRVMVpHTTBNekV6T0RKaFpXSTRORE5sWkRVMU9HRmtOakZpTVEiLCJraWQiOiJOVEF4Wm1NeE5ETXlaRGczTVRVMVpHTTBNekV6T0RKaFpXSTRORE5sWkRVMU9HRmtOakZpTVEiLCJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ0ZXN0dXNlckBjYXJib24uc3VwZXIiLCJhdWQiOlsiNFBGWThNbUh0TnRFcVh1S2NmWGQ2YWRFWnFjYSJdLCJhenAiOiI0UEZZOE1tSHROdEVxWHVLY2ZYZDZhZEVacWNhIiwic2NvcGUiOiJ0c3QiLCJpc3MiOiJodHRwczpcL1wvbG9jYWxob3N0Ojk0NDRcL29hdXRoMlwvdG9rZW4iLCJleHAiOjE1MzQ1MDQ1MjcsImlhdCI6MTUzNDUwMDkyNywianRpIjoiODQzNGIwZmEtM2E1NC00MjI3LWJlOTAtYmQ0Y2MzOWI0ZTY3In0.MyOLP-7-Fpbww7rsAZ2J6YkZa_pd4qEuOcNKlOF1N4hpTtbfzAothrmvq1dqnXmOI35rZUoaqOYaBZPF58fIzd1ixhjS0b2qo7fRlBD_iwK_FP8p1DgwXP1E3dTb4YFj3TeaN0XUFshNCV8M0S0l2obgdOU95qB81JkxUTEuRO9rw8wSVAaACe90oGBTVu9XNni7o6dVg07aE9Ic8n1n4fGjr1JJb9VQ9Y1GleO9XgFHqdMtOVEWgQHyanMbAaoBA8WguRKFd70-L9WoMOjbfQ57wVIqQgrll2YvV1jKLx74YOyu8N2M-z-uTut2ySD1EeKJC3IzrpdgFtTYvfJJ7A";
+
     // Mock oauth app information holder
-    private Map<String, OAuthApplicationInfo> oauthApps;
+    private Map<String, org.wso2.carbon.apimgt.api.model.xsd.OAuthApplicationInfo> oauthApps;
 
     public ExternalKeyManager() {
         oauthApps = new HashMap<>();
@@ -185,7 +192,7 @@ public class ExternalKeyManager extends AMDefaultKeyManagerImpl {
 
         OAuthApplicationInfo oAuthApplicationInfo = new OAuthApplicationInfo();
         try {
-            OAuthApplicationInfo info = getOAuthApplication(consumerKey);
+                org.wso2.carbon.apimgt.api.model.xsd.OAuthApplicationInfo info = getOAuthApplication(consumerKey);
 
             if (info == null || info.getClientId() == null) {
                 return null;
@@ -219,6 +226,18 @@ public class ExternalKeyManager extends AMDefaultKeyManagerImpl {
         return oAuthApplicationInfo;
     }
 
+    @Override
+    public AccessTokenInfo getNewApplicationAccessToken(AccessTokenRequest tokenRequest) throws APIManagementException {
+        // TODO: 8/17/18 Implement token request to Actual KM
+
+        // Mock token info
+        AccessTokenInfo tokenInfo = new AccessTokenInfo();
+        tokenInfo.setAccessToken(ACCESS_TOKEN);
+        tokenInfo.setValidityPeriod(System.currentTimeMillis());
+
+        return tokenInfo;
+    }
+
     public AccessTokenInfo getTokenMetaData(String token) throws APIManagementException {
         AccessTokenInfo tokenInfo = new AccessTokenInfo();
 
@@ -226,8 +245,7 @@ public class ExternalKeyManager extends AMDefaultKeyManagerImpl {
             SignedJWT signedJWT = getSignedJWT(token);
             ReadOnlyJWTClaimsSet claimsSet = signedJWT.getJWTClaimsSet();
             tokenInfo.setEndUserName(claimsSet.getSubject());
-            // TODO: 8/15/18 Set consumer Key
-//            tokenInfo.setConsumerKey(clientApplicationDTO.getConsumerKey());
+            tokenInfo.setConsumerKey(signedJWT.getJWTClaimsSet().getAudience().get(0));
             tokenInfo.setValidityPeriod(claimsSet.getExpirationTime().getTime());
             tokenInfo.setIssuedTime(claimsSet.getIssueTime().getTime());
             Object scopeObj = claimsSet.getAllClaims().get("scope");
@@ -261,9 +279,14 @@ public class ExternalKeyManager extends AMDefaultKeyManagerImpl {
 
         // TODO: 8/17/18 Send oauth app creation request to actual KM
 
-        // Create a dummy mock clientId:clientSecrete pair
-        info.setClientId(UUID.randomUUID().toString());
-        info.setClientSecret(UUID.randomUUID().toString());
+        // Set mock clientId:clientSecrete pair
+        info.setClientId(CONSUMER_KEY);
+        info.setClientSecret(CONSUMER_SECRET);
+        info.setJsonString(applicationToCreate.getJsonString());
+        info.setClientName(applicationToCreate.getClientName());
+        info.setCallBackURL(applicationToCreate.getCallBackURL());
+        info.setIsSaasApplication(applicationToCreate.getIsSaasApplication());
+        oauthApps.put(CONSUMER_KEY, info);
 
         return info;
     }
@@ -281,7 +304,7 @@ public class ExternalKeyManager extends AMDefaultKeyManagerImpl {
 
     }
 
-    private OAuthApplicationInfo getOAuthApplication(String consumerKey)
+    private org.wso2.carbon.apimgt.api.model.xsd.OAuthApplicationInfo getOAuthApplication(String consumerKey)
             throws Exception {
         // TODO: 8/17/18 Send get oauth application request to actual KM
         return oauthApps.get(consumerKey);

@@ -18,7 +18,6 @@ package org.wso2.apimgt.sample;
 
 import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JWSVerifier;
-import com.nimbusds.jose.ReadOnlyJWSHeader;
 import com.nimbusds.jose.crypto.RSASSAVerifier;
 import com.nimbusds.jwt.ReadOnlyJWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
@@ -141,16 +140,7 @@ public class OAuth2JWTSelfValidationHandler extends AbstractKeyValidationHandler
     }
 
     @Override
-    public boolean validateSubscription(TokenValidationContext validationContext) throws APIKeyMgtException {
-        return true;
-    }
-
-    @Override
     public boolean validateScopes(TokenValidationContext validationContext) throws APIKeyMgtException {
-//        if (validationContext.isCacheHit()) {
-//            return true;
-//        }
-
         boolean isValid = false;
         APIKeyValidationInfoDTO apiKeyValidationInfoDTO = validationContext.getValidationInfoDTO();
 
@@ -275,8 +265,7 @@ public class OAuth2JWTSelfValidationHandler extends AbstractKeyValidationHandler
     private boolean validateSignature(SignedJWT signedJWT, IdentityProvider idp)
             throws JOSEException, IdentityOAuth2Exception {
         JWSVerifier verifier = null;
-        ReadOnlyJWSHeader header = signedJWT.getHeader();
-        X509Certificate x509Certificate = resolveSignerCertificate(header, idp);
+        X509Certificate x509Certificate = resolveSignerCertificate(idp);
         if (x509Certificate == null) {
             throw new IdentityOAuth2Exception(
                     "Unable to locate certificate for Identity Provider: " + idp.getDisplayName());
@@ -315,17 +304,7 @@ public class OAuth2JWTSelfValidationHandler extends AbstractKeyValidationHandler
         return isValid;
     }
 
-    /**
-     * The default implementation resolves one certificate to Identity Provider and ignores the JWT header.
-     * Override this method, to resolve and enforce the certificate in any other way
-     * such as x5t attribute of the header.
-     *
-     * @param header The JWT header. Some of the x attributes may provide certificate information.
-     * @param idp    The identity provider, if you need it.
-     * @return the resolved X509 Certificate, to be used to validate the JWT signature.
-     * @throws IdentityOAuth2Exception something goes wrong.
-     */
-    protected X509Certificate resolveSignerCertificate(ReadOnlyJWSHeader header, IdentityProvider idp)
+    private X509Certificate resolveSignerCertificate(IdentityProvider idp)
             throws IdentityOAuth2Exception {
         X509Certificate x509Certificate;
         String tenantDomain = getTenantDomain();
@@ -340,10 +319,11 @@ public class OAuth2JWTSelfValidationHandler extends AbstractKeyValidationHandler
         return x509Certificate;
     }
 
-    private boolean checkExpirationTime(Date expirationTime) throws IdentityOAuth2Exception {
+    private boolean checkExpirationTime(Date expirationTime) {
         long timeStampSkewMillis = OAuthServerConfiguration.getInstance().getTimeStampSkewInSeconds() * 1000;
         long expirationTimeInMillis = expirationTime.getTime();
         long currentTimeInMillis = System.currentTimeMillis();
+
         if ((currentTimeInMillis + timeStampSkewMillis) > expirationTimeInMillis) {
             if (log.isDebugEnabled()) {
                 log.debug("Token is expired." + ", Expiration Time(ms) : " + expirationTimeInMillis
@@ -357,15 +337,16 @@ public class OAuth2JWTSelfValidationHandler extends AbstractKeyValidationHandler
         if (log.isDebugEnabled()) {
             log.debug("Expiration Time(exp) of Token was validated successfully.");
         }
+
         return true;
     }
 
-    private boolean checkNotBeforeTime(Date notBeforeTime) throws IdentityOAuth2Exception {
-
+    private boolean checkNotBeforeTime(Date notBeforeTime) {
         if (notBeforeTime != null) {
             long timeStampSkewMillis = OAuthServerConfiguration.getInstance().getTimeStampSkewInSeconds() * 1000;
             long notBeforeTimeMillis = notBeforeTime.getTime();
             long currentTimeInMillis = System.currentTimeMillis();
+
             if (currentTimeInMillis + timeStampSkewMillis < notBeforeTimeMillis) {
                 if (log.isDebugEnabled()) {
                     log.debug("Token is used before Not_Before_Time." + ", Not Before Time(ms) : " + notBeforeTimeMillis
@@ -375,6 +356,7 @@ public class OAuth2JWTSelfValidationHandler extends AbstractKeyValidationHandler
 
                 return false;
             }
+
             if (log.isDebugEnabled()) {
                 log.debug("Not Before Time(nbf) of Token was validated successfully.");
             }
