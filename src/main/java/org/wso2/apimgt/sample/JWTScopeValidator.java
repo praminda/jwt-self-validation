@@ -42,10 +42,13 @@ public class JWTScopeValidator extends OAuth2ScopeValidator {
         // Get the list of scopes associated with the access token
         String[] scopes = accessTokenDO.getScope();
 
-        // If no scopes are associated with the token no need to perform scope validation
-        if (scopes == null || scopes.length == 0) {
-            return true;
-        }
+        // When token is requested without specifying the scopes, KM can attach an default
+        // scope to the token. In that case this if block can be enabled. But for this
+        // implementation we are not attaching 'default' scope to the token. Hence this if
+        // block is commented.
+//        if (scopes == null || scopes.length == 0) {
+//            return true;
+//        }
 
         String resourceScope = null;
         TokenMgtDAO tokenMgtDAO = new TokenMgtDAO();
@@ -85,6 +88,10 @@ public class JWTScopeValidator extends OAuth2ScopeValidator {
             }
 
             return true;
+        } else if (scopes == null || scopes.length == 0) {
+            // resource is protected with scope but token doesn't contain any scope
+            // This else if block is not required if a 'default' scope is set in the token
+            return false;
         }
 
         List<String> scopeList = new ArrayList<>(Arrays.asList(scopes));
