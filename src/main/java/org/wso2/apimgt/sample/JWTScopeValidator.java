@@ -42,7 +42,7 @@ public class JWTScopeValidator extends OAuth2ScopeValidator {
         // Get the list of scopes associated with the access token
         String[] scopes = accessTokenDO.getScope();
 
-        // If no scopes are associated with the token
+        // If no scopes are associated with the token no need to perform scope validation
         if (scopes == null || scopes.length == 0) {
             return true;
         }

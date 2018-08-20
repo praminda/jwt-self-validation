@@ -33,7 +33,8 @@
                 <updatePolicy>daily</updatePolicy>
                 <checksumPolicy>ignore</checksumPolicy>
             </releases>
-        </repository></repositories>
+        </repository>
+    </repositories>
 
 
     <dependencies>

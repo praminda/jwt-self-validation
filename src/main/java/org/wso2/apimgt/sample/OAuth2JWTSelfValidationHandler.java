@@ -72,17 +72,21 @@ public class OAuth2JWTSelfValidationHandler extends AbstractKeyValidationHandler
         AccessTokenInfo tokenInfo;
 
         try {
-            SignedJWT signedJWT = getSignedJWT(tokenValidationContext);
+            SignedJWT signedJWT = getSignedJWT(tokenValidationContext.getAccessToken());
             ReadOnlyJWTClaimsSet claimsSet = signedJWT.getJWTClaimsSet();
 
             if (claimsSet == null) {
                 throw new APIKeyMgtException("Claim values are empty in the given Token.");
             }
 
+            // validate jwt fields
             validateRequiredFields(claimsSet);
             IdentityProvider identityProvider = getResidentIDPForIssuer(claimsSet.getIssuer());
 
+            // validate jwt signature
             isValidSignature = validateSignature(signedJWT, identityProvider);
+
+            // check JWT Expiration and note before time
             isNotExpired = checkExpirationTime(claimsSet.getExpirationTime());
             isValidNotBeforeTime = checkNotBeforeTime(claimsSet.getNotBeforeTime());
         } catch (JOSEException | ParseException | IdentityOAuth2Exception e) {
@@ -93,7 +97,7 @@ public class OAuth2JWTSelfValidationHandler extends AbstractKeyValidationHandler
         isJWTValid = isValidSignature && isNotExpired && isValidNotBeforeTime;
 
         try {
-            // Obtaining details about the token.
+            // Obtaining details about the token from KM
             tokenInfo = KeyManagerHolder.getKeyManagerInstance().
                     getTokenMetaData(tokenValidationContext.getAccessToken());
 
@@ -130,7 +134,6 @@ public class OAuth2JWTSelfValidationHandler extends AbstractKeyValidationHandler
                 Set<String> scopeSet = new HashSet<String>(Arrays.asList(tokenInfo.getScopes()));
                 apiKeyValidationInfoDTO.setScopes(scopeSet);
             }
-
         } catch (APIManagementException e) {
             log.error("Error while obtaining Token Metadata from Authorization Server", e);
             throw new APIKeyMgtException("Error while obtaining Token Metadata from Authorization Server");
@@ -151,11 +154,13 @@ public class OAuth2JWTSelfValidationHandler extends AbstractKeyValidationHandler
         String[] scopes = null;
         Set<String> scopesSet = apiKeyValidationInfoDTO.getScopes();
 
+        // Convert scopesSet to string array
         if (scopesSet != null && !scopesSet.isEmpty()) {
             scopes = scopesSet.toArray(new String[scopesSet.size()]);
+
             if (log.isDebugEnabled() && scopes != null) {
                 StringBuilder scopeList = new StringBuilder();
-                
+
                 for (String scope : scopes) {
                     scopeList.append(scope);
                     scopeList.append(",");
@@ -183,6 +188,7 @@ public class OAuth2JWTSelfValidationHandler extends AbstractKeyValidationHandler
             actualVersion = actualVersion.split(APIConstants.DEFAULT_VERSION_PREFIX)[1];
         }
 
+        // build the resource path being accessed
         String resource =
                 validationContext.getContext() + '/' + actualVersion + validationContext.getMatchingResource() + ':'
                         + validationContext.getHttpVerb();
@@ -191,6 +197,8 @@ public class OAuth2JWTSelfValidationHandler extends AbstractKeyValidationHandler
             OAuth2ScopeValidator scopeValidator = OAuthServerConfiguration.getInstance().getoAuth2ScopeValidator();
 
             if (scopeValidator != null) {
+
+                // Validate scopes using JWTScopeValidator
                 if (scopeValidator.validateScope(accessTokenDO, resource)) {
                     isValid = true;
                 } else {
@@ -207,10 +215,31 @@ public class OAuth2JWTSelfValidationHandler extends AbstractKeyValidationHandler
         return isValid;
     }
 
-    private SignedJWT getSignedJWT(TokenValidationContext validationReq) throws ParseException {
-        return SignedJWT.parse(validationReq.getAccessToken());
+    /**
+     * Parse and retrieve the sigend JWT from the access token string
+     *
+     * @param accessToken JWT Access Token
+     * @return {@link SignedJWT} model of the {@code accessToken}
+     * @throws ParseException when failed to parse the access token as an JWT
+     */
+    private SignedJWT getSignedJWT(String accessToken) throws ParseException {
+        return SignedJWT.parse(accessToken);
     }
 
+    /**
+     * Checks if following fields contain values in the JWT claim set
+     * <ul>
+     *     <li>issuer</li>
+     *     <li>subject</li>
+     *     <li>expiration time</li>
+     *     <li>audience</li>
+     *     <li>jti</li>
+     * </ul>
+     *
+     * @param claimsSet JWT claim set to validate
+     * @return {@code true} if validation is successful
+     * @throws APIKeyMgtException When validation fails
+     */
     private boolean validateRequiredFields(ReadOnlyJWTClaimsSet claimsSet) throws APIKeyMgtException {
         String subject = claimsSet.getSubject();
         List<String> audience = claimsSet.getAudience();
@@ -225,6 +254,13 @@ public class OAuth2JWTSelfValidationHandler extends AbstractKeyValidationHandler
         return true;
     }
 
+    /**
+     * Retrieve resident IDP for the issuer
+     *
+     * @param jwtIssuer issuer of the JWT
+     * @return Resident IDP
+     * @throws APIKeyMgtException
+     */
     private IdentityProvider getResidentIDPForIssuer(String jwtIssuer) throws APIKeyMgtException {
         String tenantDomain = getTenantDomain();
         String issuer = StringUtils.EMPTY;
@@ -237,9 +273,11 @@ public class OAuth2JWTSelfValidationHandler extends AbstractKeyValidationHandler
                     .format("Error while getting Resident Identity Provider of '%s' tenant.", tenantDomain);
             throw new APIKeyMgtException(errorMsg, e);
         }
+
         FederatedAuthenticatorConfig[] fedAuthnConfigs = residentIdentityProvider.getFederatedAuthenticatorConfigs();
         FederatedAuthenticatorConfig oauthAuthenticatorConfig = IdentityApplicationManagementUtil
                 .getFederatedAuthenticator(fedAuthnConfigs, IdentityApplicationConstants.Authenticator.OIDC.NAME);
+
         if (oauthAuthenticatorConfig != null) {
             issuer = IdentityApplicationManagementUtil
                     .getProperty(oauthAuthenticatorConfig.getProperties(), OIDC_IDP_ENTITY_ID).getValue();
@@ -252,6 +290,9 @@ public class OAuth2JWTSelfValidationHandler extends AbstractKeyValidationHandler
         return residentIdentityProvider;
     }
 
+    /**
+     * @return current tenant domain
+     */
     private String getTenantDomain() {
         String tenantDomain = PrivilegedCarbonContext.getThreadLocalCarbonContext().getTenantDomain();
 
@@ -262,6 +303,15 @@ public class OAuth2JWTSelfValidationHandler extends AbstractKeyValidationHandler
         return tenantDomain;
     }
 
+    /**
+     * Validates JWT signature against the {@code idp}
+     *
+     * @param signedJWT JWT to be validated
+     * @param idp IDP to validate against
+     * @return validation status
+     * @throws JOSEException
+     * @throws IdentityOAuth2Exception
+     */
     private boolean validateSignature(SignedJWT signedJWT, IdentityProvider idp)
             throws JOSEException, IdentityOAuth2Exception {
         JWSVerifier verifier = null;
@@ -280,8 +330,10 @@ public class OAuth2JWTSelfValidationHandler extends AbstractKeyValidationHandler
                 log.debug("Signature Algorithm found in the Token Header: " + alg);
             }
             if (alg.indexOf(ALGO_PREFIX) == 0) {
+
                 // At this point 'x509Certificate' will never be null.
                 PublicKey publicKey = x509Certificate.getPublicKey();
+
                 if (publicKey instanceof RSAPublicKey) {
                     verifier = new RSASSAVerifier((RSAPublicKey) publicKey);
                 } else {
@@ -304,8 +356,14 @@ public class OAuth2JWTSelfValidationHandler extends AbstractKeyValidationHandler
         return isValid;
     }
 
-    private X509Certificate resolveSignerCertificate(IdentityProvider idp)
-            throws IdentityOAuth2Exception {
+    /**
+     * Retrieve IDP certificate as {@code X509Certificate}
+     *
+     * @param idp IDP instance
+     * @return resovled {@code X509Certificate}
+     * @throws IdentityOAuth2Exception
+     */
+    private X509Certificate resolveSignerCertificate(IdentityProvider idp) throws IdentityOAuth2Exception {
         X509Certificate x509Certificate;
         String tenantDomain = getTenantDomain();
         try {
@@ -319,6 +377,12 @@ public class OAuth2JWTSelfValidationHandler extends AbstractKeyValidationHandler
         return x509Certificate;
     }
 
+    /**
+     * Check if expiration time is already reached or not
+     *
+     * @param expirationTime expiration time of the JWT
+     * @return validation status. {@code true} or {@code false}
+     */
     private boolean checkExpirationTime(Date expirationTime) {
         long timeStampSkewMillis = OAuthServerConfiguration.getInstance().getTimeStampSkewInSeconds() * 1000;
         long expirationTimeInMillis = expirationTime.getTime();
@@ -341,6 +405,12 @@ public class OAuth2JWTSelfValidationHandler extends AbstractKeyValidationHandler
         return true;
     }
 
+    /**
+     * Check if token is used before notBeforeTime
+     *
+     * @param notBeforeTime not before time of the JWT
+     * @return validation status. {@code true} or {@code false}
+     */
     private boolean checkNotBeforeTime(Date notBeforeTime) {
         if (notBeforeTime != null) {
             long timeStampSkewMillis = OAuthServerConfiguration.getInstance().getTimeStampSkewInSeconds() * 1000;
